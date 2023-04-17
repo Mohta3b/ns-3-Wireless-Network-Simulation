@@ -30,8 +30,10 @@
 using namespace ns3;
 using namespace std;
 NS_LOG_COMPONENT_DEFINE ("WifiTopology");
-const int MAPPER_COUNT = 1;
-const float DURATION_TIME = 60.0;
+const int MAPPER_COUNT = 3;
+const float DURATION_TIME = 60.01;
+std::string input_message = "";
+std::string message = "";
 
 void
 ThroughputMonitor (FlowMonitorHelper *fmhelper, Ptr<FlowMonitor> flowMon, double em)
@@ -219,8 +221,7 @@ private:
     //Ptr<Socket> serverSocket; // between client and server
     Ptr<Socket> mapperSocket; // between client and mapper
     // create buffer vector to save received data in string foramt
-    std::string message = "";
-    std::string input_message = "";
+    //std::string message = "";
     
 };
 
@@ -395,8 +396,8 @@ main (int argc, char *argv[])
     FlowMonitorHelper flowHelper;
     flowMonitor = flowHelper.InstallAll();
 
-    //ThroughputMonitor (&flowHelper, flowMonitor, error);
-    //AverageDelayMonitor (&flowHelper, flowMonitor, error);
+    ThroughputMonitor (&flowHelper, flowMonitor, error);
+    AverageDelayMonitor (&flowHelper, flowMonitor, error);
 
     Simulator::Stop (Seconds (duration));
     Simulator::Run ();
@@ -417,18 +418,17 @@ client::~client ()
 {
 }
 
-static void GenerateTraffic (Ptr<Socket> socket, uint16_t data, std::string &input_message)
+static void GenerateTraffic (Ptr<Socket> socket, uint16_t data)
 {
     Ptr<Packet> packet = new Packet();
     MyHeader m;
     m.SetData(data);
     packet->AddHeader (m);
-    packet->Print (std::cout);
+    //packet->Print (std::cout);
     socket->Send(packet);
-    //std::cout << packet->GetSize() << std::endl;
-    input_message += to_string(data);
-    //std::cout << input_message << std::endl;
-    Simulator::Schedule (Seconds (0.1), &GenerateTraffic, socket, rand() % 26 , input_message);
+
+    input_message += char(data + 97);
+    Simulator::Schedule (Seconds (0.1), &GenerateTraffic, socket, rand() % 26);
 }
 
 void
@@ -439,8 +439,7 @@ client::StartApplication (void)
     InetSocketAddress sockAddr (master_ip.GetAddress(0), masterClientPort);
     sock->Connect (sockAddr);
 
-    GenerateTraffic(sock, 0 , input_message);
-    //std::cout << "heyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy" << std::endl;
+    GenerateTraffic(sock, 0);
 
     // create udp connection to receive traffic from mappers
     mapperSocket = Socket::CreateSocket (GetNode (), UdpSocketFactory::GetTypeId ());
@@ -463,10 +462,10 @@ client::HandleRead (Ptr<Socket> socket)
         //std::cout << "wefiwlfnelkwf :   "<<  packet->GetSize() << std::endl;
         MyHeader m;
         packet->RemoveHeader (m);
-        // convert ascii to char and append to message
-        message += (char)(m.GetData() + 97);
+        std::cout << "Received Data From Mapper: " << m.GetData() << std::endl;
 
-        //std::cout << "Message: " << message << std::endl;
+        // convert ascii to char and append to message
+        message += (char)(m.GetData());
     }
 }
 
@@ -474,8 +473,8 @@ void
 client::PrintMessage ()
 {
     NS_LOG_INFO ("Message: " << message);
-    std:: cout << "Message: " << message << std::endl;
-    std:: cout << "Input Message: " << input_message << std::endl;
+    std:: cout << "Input Message: " << std::endl << input_message << std::endl;
+    std:: cout << "Message: " << std::endl << message << std::endl;
 }
 
 master::master (uint16_t masterClientPort, std::vector<uint16_t> masterMapperPort, Ipv4InterfaceContainer& master_ip, Ipv4InterfaceContainer& mapper_ip)
@@ -507,9 +506,6 @@ master::StartApplication (void)
         tcpSocket.push_back (Socket::CreateSocket (GetNode (), TcpSocketFactory::GetTypeId ()));
         tcpSocket[i]->Connect (InetSocketAddress (mapper_ip.GetAddress(i), masterMapperPort[i]));
     }
-    
-
-    //std::cout << "heyyyyyy" << std::endl;
 
     // Send received traffic from client to mappers
     socket->SetRecvCallback (MakeCallback (&master::HandleRead, this));
@@ -539,14 +535,6 @@ master::HandleRead (Ptr<Socket> socket)
         {
             tcpSocket[i]->Send (new_packet);
         }
-
-        // save packet in local buffer
-        // MyHeader data;
-        // packet->RemoveHeader(data);
-        // buffer.push_back (data);
-
-        // Print data
-        // std::cout << "Data: " << data.GetData() << std::endl;
     }
 }
 
@@ -568,15 +556,18 @@ void
 mapper::StartApplication (void)
 {
     // Set Encoder to all mappers (for each mapper almost equal number of unique alphabets) : 1 -> a , 2 -> b , ... and if we have 3 mappers then first mapper would have 1 to 9, second 10 to 18 and third 19 to 26
-    // if 3 mappers : first mapper 0 to 8, second 9 to 17 and third 18 to 26
-    int start = (this_mapper_id * 26) / 3;
-    int end = ((this_mapper_id + 1) * 26) / 3;
+    int start = (this_mapper_id * 26) / MAPPER_COUNT;
+    int end = ((this_mapper_id + 1) * 26) / MAPPER_COUNT;
     int j =0;
-    for (int i = start; i <= end; i++)
+    for (int i = 0; i < 26; i++)
     {
-        // {1 , a} , {2 , b} , ...
-        encoder[j] = std::make_pair (i+1, (char)(i+97));
-        //std::cout << "encoder[i]: " << i << "  "<< encoder[i] << std::endl;
+        if (i >= start && i <= end)
+        {
+            encoder[i] = 'a' + j;
+            j++;
+        }
+        else
+            encoder[i] = '&';
     }
 
     // Creat tcp connection for each mapper to receive message from master
@@ -585,7 +576,6 @@ mapper::StartApplication (void)
     tcpSocket->Bind (local1);
     tcpSocket->Listen ();
 
-    //std::cout << "Handle Acceptaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" << std::endl;
     // Connect to udp connection created by client
     udpSocket = Socket::CreateSocket (GetNode (), UdpSocketFactory::GetTypeId ());
     InetSocketAddress local2 = InetSocketAddress (Ipv4Address::GetAny (), mapperClientPort);
@@ -600,10 +590,7 @@ mapper::StartApplication (void)
 void
 mapper::HandleAccept (Ptr<Socket> s, const Address& from)
 {
-
-    //std::cout << "Handle Accept" << std::endl;
     NS_LOG_INFO ("Received one connection from " << InetSocketAddress::ConvertFrom(from).GetIpv4 ());
-    //tcpSocket = s;
     s->SetRecvCallback (MakeCallback (&mapper::HandleRead, this));
 }
 
@@ -622,19 +609,17 @@ mapper::HandleRead (Ptr<Socket> socket)
         // Decode data
         MyHeader data;
         packet->RemoveHeader(data);
-        std::cout << "Received Data: " << data.GetData() << std::endl;
         char decodedData = Decode(data.GetData());
-        std::cout << "decodedData : " << decodedData << std::endl;
 
         // Send decoded data to client
         if (decodedData != '&')
         {
-            //std::cout << "Data: " << data.GetData() << std::endl;
-            //std::cout << "Decoded Data: " << decodedData << std::endl;
+            std::cout << "Received Data From Master: " << data.GetData() << std::endl;
+            std::cout << "decodedData : " << decodedData << std::endl;
             // convert decodedData to ASCII uint16_t
             uint16_t ascii = decodedData;
             std::cout << "ASCII: " << ascii << std::endl;
-            //std::cout << "ASCII: " << ascii << std::endl;
+
             // Add header to packet
             MyHeader m;
             m.SetData(ascii);
@@ -648,8 +633,6 @@ mapper::HandleRead (Ptr<Socket> socket)
 char
 mapper::Decode (uint16_t data)
 {
-    //std::cout << "Size : " << encoder.size() << std::endl;
-    // Decode data using encoder : return "&" if Decode was not successful
-    
-    
+    //std::cout << "Encoder: " << encoder[data] << std::endl;
+    return encoder[data];
 }
