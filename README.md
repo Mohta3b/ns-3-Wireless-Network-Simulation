@@ -25,15 +25,27 @@ and the sum of the throughput of the master to mappers is approximately equal to
 this function calculates the average delay of each packet.
 
 ### Client Class
+we pass the ip and port of the master so that the client connect to the master through a udp socket. and bind the client on a pair of ip and port to listent on udp socket from wich the mapper will send the result.
 ### Mapper Class
+for the mapper we pass the ip and port pair to which the master will connect using tcp, so 
+we will bind mapper to this (ip,port) pair.
+and pass the client socketAddr so that it can send result by udp.  
 ### Master Class
+in the master class we keep track of the ip4 addr. of the mappers that we want to connect by a tcp socket. in other to connect by the socket you should have the ip and the port of the destion you want to connect or the bind(listen) to.
+we assiciate an ip4 and port to the master on which it wil listen to the client through a udp socket.
 ### MyHeader Class
 -setData():
 set the number that will be in the header of the packet.
+- getData():
+get the number that is in the header of the packet.
 - print():
 print the number set in the header of the packet.
-
-
+- Serialize():
+convert the 16 bits(2bytes) integer number in to the big-endian representation.
+convert from host to network by using function: writeHtonU16().
+- deserialize():
+reverse the Serialize() function.
+convert from network to host by using function: readNtohU16().
 ## simulation results report
 
 ### Throughput and Average Delay
